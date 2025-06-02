@@ -64,15 +64,6 @@ namespace ZintNet
         public ZintNetDLLException(string message, Exception innerException)
             : base(baseMessage + Environment.NewLine + message, innerException)
         { }
-
-        /// <summary>
-        /// Initialses a new instance of ZintNet.ZintNetDLLException class with a specified serialization information and streaming context.
-        /// </summary>
-        /// <param name="info">serialization info.</param>
-        /// <param name="context">streaming context.</param>
-        protected ZintNetDLLException(SerializationInfo info, StreamingContext context)
-            : base(info, context)
-        { }
     }
 
     /// <summary>
@@ -104,15 +95,6 @@ namespace ZintNet
         /// <param name="innerException">inner exception</param>
 		public InvalidDataException(string message, Exception innerException) 
 			: base(baseMessage + Environment.NewLine + message, innerException)
-		{}
-
-        /// <summary>
-        /// Initialses a new instance of ZintNet.InvalidDataException class with a specified serialization information and streaming context.
-        /// </summary>
-        /// <param name="info">serialization info.</param>
-        /// <param name="context">streaming context.</param>
-	    protected InvalidDataException(SerializationInfo info, StreamingContext context)
-			    : base(info, context)
 		{}
 	}
 
@@ -149,15 +131,6 @@ namespace ZintNet
         public InvalidSymbolSizeException(string message, Exception innerException)
             : base(baseMessage + Environment.NewLine + message, innerException)
         { }
-
-        /// <summary>
-        /// Initialses a new instance of ZintNet.InvalidSymbolSizeException class with a specified serialization information and streaming context.
-        /// </summary>
-        /// <param name="info">serialization info.</param>
-        /// <param name="context">streaming context.</param>
-        protected InvalidSymbolSizeException(SerializationInfo info, StreamingContext context)
-            : base(info, context)
-        { }
     }
 
     /// <summary>
@@ -190,15 +163,6 @@ namespace ZintNet
         /// <param name="innerException">inner exception</param>
 		public InvalidDataLengthException( string message, Exception innerException ) 
 			: base( message, innerException )
-		{}
-
-        /// <summary>
-        /// Initialses a new instance of ZintNet.InvalidDataLengthException class with a specified serialization information and streaming context.
-        /// </summary>
-        /// <param name="info">serialization info.</param>
-        /// <param name="context">streaming context.</param>
-	    protected InvalidDataLengthException( SerializationInfo info, StreamingContext context ) :
-			 base( info, context )
 		{}
 	}
 
@@ -235,15 +199,6 @@ namespace ZintNet
 		public InvalidDataFormatException( string message, Exception innerException ) 
 			: base( baseMessage + Environment.NewLine + message, innerException )
 		{}
-
-        /// <summary>
-        /// Initialses a new instance of ZintNet.InvalidDataFormatException class with a specified serialization information and streaming context.
-        /// </summary>
-        /// <param name="info">serialization info.</param>
-        /// <param name="context">streaming context.</param>
-	    protected InvalidDataFormatException( SerializationInfo info, StreamingContext context )
-            : base( info, context )
-		{}
 	}
 
     /// <summary>
@@ -278,15 +233,6 @@ namespace ZintNet
         /// <param name="innerException">inner exception</param>
         public ErrorCorrectionLevelException(string message, Exception innerException)
             : base(mbaseMessage + Environment.NewLine + message, innerException)
-        { }
-
-        /// <summary>
-        /// Initialses a new instance of ZintNet.ErrorCorrectionLevelException class with a specified serialization information and streaming context.
-        /// </summary>
-        /// <param name="info">serialization info.</param>
-        /// <param name="context">streaming context.</param>
-        protected ErrorCorrectionLevelException(SerializationInfo info, StreamingContext context)
-            : base(info, context)
         { }
     }
 
@@ -323,15 +269,6 @@ namespace ZintNet
         public DataEncodingException(string message, Exception innerException)
             : base(baseMessage + Environment.NewLine + message, innerException)
         { }
-
-        /// <summary>
-        /// Initialses a new instance of ZintNet.DataEncodingException class with a specified serialization information and streaming context.
-        /// </summary>
-        /// <param name="info">serialization info.</param>
-        /// <param name="context">streaming context.</param>
-        protected DataEncodingException(SerializationInfo info, StreamingContext context)
-            : base(info, context)
-        { }
     }
 
     /// <summary>
@@ -366,15 +303,6 @@ namespace ZintNet
         /// <param name="innerException">inner exception</param>
         public UnknownSymbolException(string message, Exception innerException)
             : base(baseMessage + Environment.NewLine + message, innerException)
-        { }
-
-        /// <summary>
-        /// Initialses a new instance of ZintNet.UnknownSymbolException class with a specified serialization information and streaming context.
-        /// </summary>
-        /// <param name="info">serialization info.</param>
-        /// <param name="context">streaming context.</param>
-        protected UnknownSymbolException(SerializationInfo info, StreamingContext context)
-            : base(info, context)
         { }
     }
 }
