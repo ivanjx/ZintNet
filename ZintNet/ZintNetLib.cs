@@ -33,15 +33,11 @@
  */
 
 using System;
-using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Text;
-
+using SkiaSharp;
 using ZintNet.Encoders;
-
-[assembly: CLSCompliant(true)]
 
 namespace ZintNet
 {
@@ -52,14 +48,14 @@ namespace ZintNet
     {
         #region Property Fields
 
-        System.Drawing.Font mFont;	    // Base font to render text.
+        SKFont mFont;	    // Base font to render text.
         float mBarcodeHeight;			// Barcode height in scale units (not including the text).
         EncodingMode mEncodingMode;     // Special message formating Standard, GS1 or HIBC.
         string mSupplementMessage;		// EAN/UPC suppliment data;
         bool mTextVisible;				// Barcode text visible if true.
         TextPosition mTextPosition;	    // Placement of the barcode text, above or below barcode;
-        Color mTextColor;				// Color to render the barcode text.
-        Color mBarcodeColor;			// Color to render the barcode.
+        SKColor mTextColor;				// Color to render the barcode text.
+        SKColor mBarcodeColor;			// Color to render the barcode.
         bool mOptionalCheckDigit;		// Determines if the option check digit is generated.
         bool mShowCheckDigit;			// Determines if the check digit(s) are show in the barcode text.
         int mNumberOfCheckDigits;   	            // The number of check digits used for the symbology;
@@ -114,8 +110,8 @@ namespace ZintNet
         float supplimentWidth;			// Width of the add on barcode.
         float symbolHeight;				// Total barcode height including text (if visible) in scale units.
         float symbolWidth;				// Total barcode width including any Supplementry in scale units.
-        Font textFont;                  // Font used to render the human readable text.
-        SizeF currentTextSize;          // Size of the current barcode text(human readable text).
+        SKFont textFont;                // Font used to render the human readable text.
+        SKSize currentTextSize;         // Size of the current barcode text(human readable text).
         bool isCompositeSymbol;         // True if the symbol is a composite symbol.
         float firstBarXOffset;          // X Offset to the render the first bar/element of the symbol.
         int barsPerCharacter;           // The number of bars for one character for the current symbol;
@@ -152,7 +148,7 @@ namespace ZintNet
         /// <summary>
         /// Gets or sets the font of the human readable text to be displayed with the sysmbol.
         /// </summary>
-        public System.Drawing.Font Font
+        public SKFont Font
         {
             get { return mFont; }
             set { mFont = value; }
@@ -329,7 +325,7 @@ namespace ZintNet
         /// <summary>
         /// Gets or sets the barcode fore color.
         /// </summary>
-        public Color BarcodeColor
+        public SKColor BarcodeColor
         {
             get { return mBarcodeColor; }
             set { mBarcodeColor = value; }
@@ -338,7 +334,7 @@ namespace ZintNet
         /// <summary>
         /// Gets or sets the barcode text fore color.
         /// </summary>
-        public Color BarcodeTextColor
+        public SKColor BarcodeTextColor
         {
             get { return mTextColor; }
             set { mTextColor = value; }
@@ -952,59 +948,55 @@ namespace ZintNet
         }
 
         /// <summary>
-        /// Renders the barcode to a user supplied graphics surface.
+        /// Renders the barcode to a user supplied SkiaSharp canvas.
         /// </summary>
-        /// <param name="graphics">graphics to render the barcode</param>
+        /// <param name="canvas">SKCanvas to render the barcode</param>
         /// <param name="startXY">point to start the rendering (in pixels)</param>
-        public void DrawBarcode(Graphics graphics, PointF startXY)
+        /// <param name="dpiX">Horizontal DPI for pixel-to-mm conversion</param>
+        /// <param name="dpiY">Vertical DPI for pixel-to-mm conversion</param>
+        public void DrawBarcode(SKCanvas canvas, SKPoint startXY, float dpiX, float dpiY)
         {
             float totalSymbolHeight = 0.0f;
-            float elementWidth = mXDimension * mMultiplier;  // Width of a single bar/element.
-            float elementHeight = 0;    // Height of bar/element in a data row.
-            float barHeight = 0;        // Height of element currently being rendered.
-            int numberOfRows = 0;       // Number of rows in the sysmbol data.
-            int rowWidth;               // Number of bars/elements for in each row of symbol data.
-            float barStartY = 0;        // Start Y point for the first row of data elements.
-            float rowStart;             // Start Y point for each row of data elements.
-            float nextBar;              // Start X point for each element in a data row.
+            float elementWidth = mXDimension * mMultiplier;
+            float elementHeight = 0;
+            float barHeight = 0;
+            int numberOfRows = 0;
+            int rowWidth;
+            float barStartY = 0;
+            float rowStart;
+            float nextBar;
             SymbolData symbolData;
             byte[] rowData;
 
-            GraphicsState graphicState = graphics.Save();
-            graphics.PageUnit = GraphicsUnit.Millimeter;
-            graphics.PageScale = 1.0f;
             // Convert the start point to millimeters.
-            startXY.X = DisplayMetrics.Convert.PixelsToMillimeter(startXY.X, graphics.DpiX);
-            startXY.Y = DisplayMetrics.Convert.PixelsToMillimeter(startXY.Y, graphics.DpiY);
+            startXY.X = DisplayMetrics.Convert.PixelsToMillimeter(startXY.X, dpiX);
+            startXY.Y = DisplayMetrics.Convert.PixelsToMillimeter(startXY.Y, dpiY);
+
+            // Save the canvas state
+            canvas.Save();
             try
             {
-                GetTotalSymbolSize(graphics);
+                GetTotalSymbolSize();
                 // Apply transformations.
-                graphics.TranslateTransform(startXY.X + (symbolWidth / 2), startXY.Y + (symbolHeight / 2));
-                graphics.RotateTransform(mRotation);
-                graphics.TranslateTransform(-(symbolWidth / 2), -(symbolHeight / 2));
-
-                // Apply smoothing.
-                if (symbolId == Symbology.MaxiCode || symbolId == Symbology.DotCode)
-                    graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                canvas.Translate(startXY.X + (symbolWidth / 2), startXY.Y + (symbolHeight / 2));
+                canvas.RotateDegrees(mRotation);
+                canvas.Translate(-(symbolWidth / 2), -(symbolHeight / 2));
 
                 // Draw maxicode.
                 if (symbolId == Symbology.MaxiCode)
                 {
-                    using (Pen pen = new Pen(mBarcodeColor, 0.67f * mMultiplier))
-                    using (SolidBrush brush = new SolidBrush(mBarcodeColor))
+                    using (var pen = new SKPaint { Color = mBarcodeColor, Style = SKPaintStyle.Stroke, StrokeWidth = 0.67f * mMultiplier, IsAntialias = true })
+                    using (var brush = new SKPaint { Color = mBarcodeColor, Style = SKPaintStyle.Fill, IsAntialias = true })
                     {
-                        // Central bullseye patterns.
                         float centerX = 13.64f * mMultiplier;
                         float centerY = 13.43f * mMultiplier;
                         float innerRadius = 0.85f * mMultiplier;
                         float centerRadius = 2.20f * mMultiplier;
                         float outerRadius = 3.54f * mMultiplier;
-                        graphics.DrawEllipse(pen, new RectangleF(centerX - innerRadius, centerY - innerRadius, innerRadius * 2, innerRadius * 2));
-                        graphics.DrawEllipse(pen, new RectangleF(centerX - centerRadius, centerY - centerRadius, centerRadius * 2, centerRadius * 2));
-                        graphics.DrawEllipse(pen, new RectangleF(centerX - outerRadius, centerY - outerRadius, outerRadius * 2, outerRadius * 2));
+                        canvas.DrawOval(new SKRect(centerX - innerRadius, centerY - innerRadius, centerX + innerRadius, centerY + innerRadius), pen);
+                        canvas.DrawOval(new SKRect(centerX - centerRadius, centerY - centerRadius, centerX + centerRadius, centerY + centerRadius), pen);
+                        canvas.DrawOval(new SKRect(centerX - outerRadius, centerY - outerRadius, centerX + outerRadius, centerY + outerRadius), pen);
 
-                        // Hexagons.
                         int row = 0;
                         IEnumerator<SymbolData> enumerator = encodedData.GetEnumerator();
                         while (enumerator.MoveNext())
@@ -1017,38 +1009,41 @@ namespace ZintNet
                                 if (rowData[column] == 1)
                                 {
                                     float rowOffset = (((row & 1) == 1) ? 1.32f : 0.88f);
-                                    RectangleF hexRect = new RectangleF(
+                                    SKRect hexRect = new SKRect(
                                         ((column * 0.88f) + rowOffset) * mMultiplier,
                                         ((row * 0.76f) + 0.76f) * mMultiplier,
-                                        0.76f * mMultiplier,
-                                        0.88f * mMultiplier);
-
-                                    // PointF array to create a hexagon.
-                                    PointF[] hexagonPoints = new PointF[] {
-						                new PointF(hexRect.X + hexRect.Width * 0.5f, hexRect.Y),
-						                new PointF(hexRect.X + hexRect.Width, hexRect.Y + hexRect.Height * 0.25f),
-						                new PointF(hexRect.X + hexRect.Width, hexRect.Y + hexRect.Height * 0.75f),
-						                new PointF(hexRect.X + hexRect.Width * 0.5f, hexRect.Y + hexRect.Height),
-						                new PointF(hexRect.X , hexRect.Y + hexRect.Height * 0.75f),
-						                new PointF(hexRect.X, hexRect.Y + hexRect.Height * 0.25f) };
-                                    graphics.FillPolygon(brush, hexagonPoints);
+                                        ((column * 0.88f) + rowOffset) * mMultiplier + 0.76f * mMultiplier,
+                                        ((row * 0.76f) + 0.76f) * mMultiplier + 0.88f * mMultiplier);
+                                    SKPoint[] hexagonPoints = new SKPoint[] {
+                                        new SKPoint(hexRect.Left + hexRect.Width * 0.5f, hexRect.Top),
+                                        new SKPoint(hexRect.Right, hexRect.Top + hexRect.Height * 0.25f),
+                                        new SKPoint(hexRect.Right, hexRect.Top + hexRect.Height * 0.75f),
+                                        new SKPoint(hexRect.Left + hexRect.Width * 0.5f, hexRect.Bottom),
+                                        new SKPoint(hexRect.Left, hexRect.Top + hexRect.Height * 0.75f),
+                                        new SKPoint(hexRect.Left, hexRect.Top + hexRect.Height * 0.25f)
+                                    };
+                                    using (var path = new SKPath())
+                                    {
+                                        path.MoveTo(hexagonPoints[0]);
+                                        for (int i = 1; i < hexagonPoints.Length; i++)
+                                            path.LineTo(hexagonPoints[i]);
+                                        path.Close();
+                                        canvas.DrawPath(path, brush);
+                                    }
                                 }
                             }
-
                             row++;
                         }
                     }
-
                     totalSymbolHeight = symbolHeight;
                 }
-
                 else
                 {
                     barStartY = 0.0f;
                     if (mTextVisible && mTextPosition == TextPosition.AboveBarcode && !isEanUpc && symbolId != Symbology.ITF14)
                         barStartY = (float)Math.Ceiling(currentTextSize.Height + mTextMargin);
 
-                    using (SolidBrush barBrush = new SolidBrush(mBarcodeColor))
+                    using (var barBrush = new SKPaint { Color = mBarcodeColor, Style = SKPaintStyle.Fill })
                     {
                         numberOfRows = encodedData.Count;
                         IEnumerator<SymbolData> enumerator = encodedData.GetEnumerator();
@@ -1057,213 +1052,158 @@ namespace ZintNet
                             symbolData = enumerator.Current;
                             if (symbolData.RowHeight != 0.0f)
                                 elementHeight = symbolData.RowHeight * elementWidth;
-
                             else
                                 elementHeight = mBarcodeHeight;
-
                             barHeight = elementHeight;
                             rowStart = barStartY;
                             nextBar = firstBarXOffset;
                             rowData = symbolData.GetRowData();
                             rowWidth = symbolData.RowCount;
-
-                            // Draw the barcode elements.
                             for (int i = 0; i < rowWidth; i++)
                             {
                                 byte barBit = rowData[i];
                                 if (barBit > 1)
                                 {
-                                    // Determine the bar heights for EAN, UPC, ISBN and any supplement.
-                                    // These values are embedded in the row data.
                                     if (isEanUpc)
                                     {
                                         switch (barBit)
                                         {
-                                            case (byte)'N':		// Normal height bar.
+                                            case (byte)'N':
                                                 rowStart = barStartY;
                                                 barHeight = elementHeight;
                                                 break;
-
-                                            case (byte)'G':		// Extended guard bar.
+                                            case (byte)'G':
                                                 rowStart = barStartY;
                                                 barHeight = elementHeight + (currentTextSize.Height / 2);
                                                 break;
-
-                                            case (byte)'S':		// Shortened bars for supplement.
+                                            case (byte)'S':
                                                 rowStart = barStartY + currentTextSize.Height;
                                                 barHeight = elementHeight - (currentTextSize.Height / 2);
                                                 break;
                                         }
-
                                         continue;
                                     }
-
-                                    // Draw ultracode in colour.
                                     if (symbolId == Symbology.Ultracode)
                                     {
                                         switch ((char)barBit)
                                         {
-                                            case 'W':
-                                                barBrush.Color = Color.White;
-                                                break;
-
-                                            case 'C':
-                                                barBrush.Color = Color.Cyan;
-                                                break;
-
-                                            case 'B':
-                                                barBrush.Color = Color.Blue;
-                                                break;
-
-                                            case 'M':
-                                                barBrush.Color = Color.Magenta;
-                                                break;
-
-                                            case 'R':
-                                                barBrush.Color = Color.Red;
-                                                break;
-
-                                            case 'Y':
-                                                barBrush.Color = Color.Yellow;
-                                                break;
-
-                                            case 'G':
-                                                barBrush.Color = Color.Lime;
-                                                break;
-
-                                            case 'K':
-                                                barBrush.Color = Color.Black;
-                                                break;
-
+                                            case 'W': barBrush.Color = SKColors.White; break;
+                                            case 'C': barBrush.Color = SKColors.Cyan; break;
+                                            case 'B': barBrush.Color = SKColors.Blue; break;
+                                            case 'M': barBrush.Color = SKColors.Magenta; break;
+                                            case 'R': barBrush.Color = SKColors.Red; break;
+                                            case 'Y': barBrush.Color = SKColors.Yellow; break;
+                                            case 'G': barBrush.Color = SKColors.Lime; break;
+                                            case 'K': barBrush.Color = SKColors.Black; break;
                                         }
-
                                         barBit = 1;
                                     }
                                 }
-
                                 if (barBit == 1)
                                 {
                                     if (isDot)
-                                        graphics.FillEllipse(barBrush, nextBar, rowStart, elementWidth, barHeight);
-
+                                        canvas.DrawOval(new SKRect(nextBar, rowStart, nextBar + elementWidth, rowStart + barHeight), barBrush);
                                     else
-                                        graphics.FillRectangle(barBrush, nextBar, rowStart, elementWidth, barHeight);
+                                        canvas.DrawRect(new SKRect(nextBar, rowStart, nextBar + elementWidth, rowStart + barHeight), barBrush);
                                 }
-
                                 nextBar += elementWidth;
                             }
-
                             barStartY += barHeight;
                             totalSymbolHeight += elementHeight;
                         }
                     }
                 }
-
-                // Draw the CodablockF bearer and binding bars.
+                // CodablockF bearer and binding bars
                 if (symbolId == Symbology.CodablockF)
                 {
-                    using (Pen pen = new Pen(mBarcodeColor, elementWidth))
+                    using (var pen = new SKPaint { Color = mBarcodeColor, Style = SKPaintStyle.Stroke, StrokeWidth = elementWidth })
                     {
-                        // Top bearer.
                         float startY = 0.0f;
-                        graphics.DrawLine(pen, 0, startY + (elementWidth / 2), symbolWidth, startY + (elementWidth / 2));
+                        canvas.DrawLine(new SKPoint(0, startY + (elementWidth / 2)), new SKPoint(symbolWidth, startY + (elementWidth / 2)), pen);
                         if (numberOfRows > 1)
                         {
-                            // Centre bindings.
                             for (int r = 0; r < numberOfRows - 1; r++)
                             {
                                 startY += elementHeight;
-                                graphics.DrawLine(pen, barsPerCharacter * elementWidth, startY, symbolWidth - ((barsPerCharacter + 3) * elementWidth), startY);
+                                canvas.DrawLine(new SKPoint(barsPerCharacter * elementWidth, startY), new SKPoint(symbolWidth - ((barsPerCharacter + 3) * elementWidth), startY), pen);
                             }
                         }
-
-                        // Bottom bearer.
                         startY += elementHeight;
-                        graphics.DrawLine(pen, 0, startY + (elementWidth / 2), symbolWidth, startY + (elementWidth / 2));
+                        canvas.DrawLine(new SKPoint(0, startY + (elementWidth / 2)), new SKPoint(symbolWidth, startY + (elementWidth / 2)), pen);
                     }
-
                     totalSymbolHeight += elementWidth;
                 }
-
-                // Draw the Code 16K and Code49 bearer and binding bars.
+                // Code 16K and Code49 bearer and binding bars
                 if (symbolId == Symbology.Code16K || symbolId == Symbology.Code49)
                 {
-                    using (Pen pen = new Pen(mBarcodeColor, elementWidth))
+                    using (var pen = new SKPaint { Color = mBarcodeColor, Style = SKPaintStyle.Stroke, StrokeWidth = elementWidth })
                     {
-                        // Top bearer.
                         float startY = 0.0f;
                         float startX = 0.0f;
-                        graphics.DrawLine(pen, startX, startY + (elementWidth / 2), symbolWidth, startY + (elementWidth / 2));
+                        canvas.DrawLine(new SKPoint(startX, startY + (elementWidth / 2)), new SKPoint(symbolWidth, startY + (elementWidth / 2)), pen);
                         if (numberOfRows > 1)
                         {
-                            // Centre bindings.
                             for (int r = 0; r < numberOfRows - 1; r++)
                             {
                                 startY += elementHeight;
-                                graphics.DrawLine(pen, firstBarXOffset, startY, symbolWidth - (2.0f * elementWidth), startY);
+                                canvas.DrawLine(new SKPoint(firstBarXOffset, startY), new SKPoint(symbolWidth - (2.0f * elementWidth), startY), pen);
                             }
                         }
-
-                        // Bottom bearer.
                         startY += elementHeight;
-                        graphics.DrawLine(pen, startX, startY + (elementWidth / 2), symbolWidth, startY + (elementWidth / 2));
+                        canvas.DrawLine(new SKPoint(startX, startY + (elementWidth / 2)), new SKPoint(symbolWidth, startY + (elementWidth / 2)), pen);
                     }
-
                     totalSymbolHeight += elementWidth;
                 }
-
-                // Draw the ITF14 bearer bars or rectangle.
+                // ITF14 bearer bars or rectangle
                 if (symbolId == Symbology.ITF14)
                 {
                     if (symbolId == Symbology.ITF14 && mITF14BearerStyle != ITF14BearerStyle.None)
                     {
-                        using (Pen pen = new Pen(mBarcodeColor, bearerWidth))
+                        using (var pen = new SKPaint { Color = mBarcodeColor, Style = SKPaintStyle.Stroke, StrokeWidth = bearerWidth })
                         {
-                            // Rectangle.
                             if (mITF14BearerStyle == ITF14BearerStyle.Rectangle)
                             {
-                                PointF[] bearerRectangle = new PointF[] {
-				                new PointF(bearerWidth / 2, bearerWidth / 2),
-				                new PointF(symbolWidth - (bearerWidth / 2), bearerWidth / 2),
-				                new PointF(symbolWidth - (bearerWidth / 2), elementHeight + (bearerWidth / 2)),
-				                new PointF(bearerWidth / 2, elementHeight + (bearerWidth / 2)),
-				                new PointF(bearerWidth / 2, 0) };
-                                graphics.DrawLines(pen, bearerRectangle);
+                                SKPoint[] bearerRectangle = new SKPoint[] {
+                                    new SKPoint(bearerWidth / 2, bearerWidth / 2),
+                                    new SKPoint(symbolWidth - (bearerWidth / 2), bearerWidth / 2),
+                                    new SKPoint(symbolWidth - (bearerWidth / 2), elementHeight + (bearerWidth / 2)),
+                                    new SKPoint(bearerWidth / 2, elementHeight + (bearerWidth / 2)),
+                                    new SKPoint(bearerWidth / 2, 0)
+                                };
+                                for (int i = 0; i < bearerRectangle.Length - 1; i++)
+                                    canvas.DrawLine(bearerRectangle[i], bearerRectangle[i + 1], pen);
                             }
-
-                            else  // Horizonal.
+                            else
                             {
-                                graphics.DrawLine(pen, 0, bearerWidth / 2, symbolWidth, bearerWidth / 2);
-                                graphics.DrawLine(pen, 0, elementHeight + (bearerWidth / 2), symbolWidth, elementHeight + (bearerWidth / 2));
+                                canvas.DrawLine(new SKPoint(0, bearerWidth / 2), new SKPoint(symbolWidth, bearerWidth / 2), pen);
+                                canvas.DrawLine(new SKPoint(0, elementHeight + (bearerWidth / 2)), new SKPoint(symbolWidth, elementHeight + (bearerWidth / 2)), pen);
                             }
                         }
-
                         totalSymbolHeight += bearerWidth;
                     }
                 }
-
-                // Render the barcode text.
-                if (isEanUpc)
-                    DrawEanUpcText(graphics, totalSymbolHeight);
-
-                else if (mTextVisible)		// Render the barcode text if set to visible.
-                    DrawLinearText(graphics, totalSymbolHeight);
+                // Render the barcode text
+                if (isEanUpc && mTextVisible)
+                {
+                    DrawEanUpcText(canvas, totalSymbolHeight);
+                }
+                else if (mTextVisible)
+                {
+                    DrawLinearText(canvas, totalSymbolHeight);
+                }
             }
-
             catch (Exception ex)
             {
                 throw new ZintNetDLLException("Error rendering barcode.", ex);
             }
-
             finally
             {
-                // Finished - reset all transformation.
-                graphics.ResetTransform();
-                graphics.Restore(graphicState);
+                canvas.Restore();
             }
         }
 
-        private void DrawEanUpcText(Graphics graphics, float totalSymbolHeight)
+        // SkiaSharp version of DrawEanUpcText
+        private void DrawEanUpcText(SKCanvas canvas, float totalSymbolHeight)
         {
             float centreAdjust;
             float textStartX = 0.0f;
@@ -1279,15 +1219,14 @@ namespace ZintNet
 
             float leftHandTextPosition = ((linearShiftCount + leftGuardBars) * elementWidth) + firstBarXOffset;
 
-            using (SolidBrush textBrush = new SolidBrush(mTextColor))
+            using (var paint = new SKPaint { Color = mTextColor, Typeface = textFont.Typeface, TextSize = textFont.Size, IsAntialias = true })
             {
                 if (!string.IsNullOrEmpty(leftHandCharacter))
                 {
                     textStartX = 0.0f;
                     if (isCompositeSymbol)
                         textStartX += elementWidth;
-
-                    graphics.DrawString(leftHandCharacter, textFont, textBrush, textStartX, textStartY);
+                    canvas.DrawText(leftHandCharacter, textStartX, textStartY + -paint.FontMetrics.Ascent, paint);
                 }
 
                 textStartX = leftHandTextPosition;
@@ -1295,9 +1234,9 @@ namespace ZintNet
                 for (int i = 0; i < leftHandText.Length; i++)
                 {
                     string textCharacter = leftHandText[i].ToString();
-                    SizeF characterWidth = graphics.MeasureString(textCharacter, textFont);
-                    centreAdjust = (characterSegment - characterWidth.Width) / 2;
-                    graphics.DrawString(textCharacter, textFont, textBrush, textStartX + centreAdjust, textStartY);
+                    float characterWidth = paint.MeasureText(textCharacter);
+                    centreAdjust = (characterSegment - characterWidth) / 2;
+                    canvas.DrawText(textCharacter, textStartX + centreAdjust, textStartY + -paint.FontMetrics.Ascent, paint);
                     textStartX += characterSegment;
                 }
 
@@ -1307,9 +1246,9 @@ namespace ZintNet
                     for (int i = 0; i < leftHandText.Length; i++)
                     {
                         string textCharacter = rightHandText[i].ToString();
-                        SizeF characterWidth = graphics.MeasureString(textCharacter, textFont);
-                        centreAdjust = (characterSegment - characterWidth.Width) / 2;
-                        graphics.DrawString(textCharacter, textFont, textBrush, textStartX + centreAdjust, textStartY);
+                        float characterWidth = paint.MeasureText(textCharacter);
+                        centreAdjust = (characterSegment - characterWidth) / 2;
+                        canvas.DrawText(textCharacter, textStartX + centreAdjust, textStartY + -paint.FontMetrics.Ascent, paint);
                         textStartX += characterSegment;
                     }
                 }
@@ -1317,7 +1256,6 @@ namespace ZintNet
                 // Move the text start X point to the end of the symbol.
                 if (symbolId == Symbology.UPCA)
                     rightGuardBars = 11;
-
                 else if (symbolId == Symbology.UPCE)
                     rightGuardBars = 6;
 
@@ -1326,86 +1264,80 @@ namespace ZintNet
                     textStartX -= elementWidth;
 
                 if (!string.IsNullOrEmpty(rightHandCharacter))
-                    graphics.DrawString(rightHandCharacter, textFont, textBrush, textStartX, textStartY);
+                    canvas.DrawText(rightHandCharacter, textStartX, textStartY + -paint.FontMetrics.Ascent, paint);
 
                 if (!string.IsNullOrEmpty(supplementText))
                 {
-                    float textWidth = graphics.MeasureString(supplementText, textFont).Width;
+                    float textWidth = paint.MeasureText(supplementText);
                     textStartX += (SymbolEncoder.supplementMargin * elementWidth) + (((supplimentWidth * elementWidth) - textWidth) / 2);
                     textStartY = totalSymbolHeight - mBarcodeHeight;
-                    graphics.DrawString(supplementText, textFont, textBrush, textStartX, textStartY);
+                    canvas.DrawText(supplementText, textStartX, textStartY + -paint.FontMetrics.Ascent, paint);
 
                     // Draw the quiet space character.
                     textStartX = (symbolWidth - leftCharacterWidth + elementWidth);
                     if (isCompositeSymbol)
                         textStartX -= elementWidth;
 
-                    graphics.DrawString(">", textFont, textBrush, textStartX, textStartY);
+                    canvas.DrawText(">", textStartX, textStartY + -paint.FontMetrics.Ascent, paint);
                 }
             }
         }
 
-        private void DrawLinearText(Graphics graphics, float totalSymbolHeight)
+        // SkiaSharp version of DrawLinearText
+        private void DrawLinearText(SKCanvas canvas, float totalSymbolHeight)
         {
-            using (StringFormat hrTextFormat = new StringFormat(StringFormatFlags.NoClip))
+            TextAlignment textAlignment = mTextAlignment;
+            float textStartX = 0.0f;
+            float textStartY = (mTextPosition == TextPosition.AboveBarcode) ? 0.0f : totalSymbolHeight + mTextMargin;
+            float textWidth = symbolWidth;
+            float textHeight = symbolHeight;
+
+            // Override the "Stretched" alignment if the text is wider than the barcode.
+            if (textAlignment == TextAlignment.Stretched && currentTextSize.Width > symbolWidth)
+                textAlignment = TextAlignment.Center;
+
+            using (var paint = new SKPaint { Color = mTextColor, Typeface = textFont.Typeface, TextSize = textFont.Size, IsAntialias = true })
             {
-                TextAlignment textAlignment = mTextAlignment;
-                float textStartX = 0.0f;
-                float textStartY = (mTextPosition == TextPosition.AboveBarcode) ? 0.0f : totalSymbolHeight + mTextMargin;
-                RectangleF textRectangle = new RectangleF(new PointF(textStartX, textStartY), new SizeF(symbolWidth, symbolHeight));
-
-                // Override the "Streched" alignment if the text is wider than the barcode.
-                if (textAlignment == TextAlignment.Stretched && currentTextSize.Width > symbolWidth)
-                    textAlignment = TextAlignment.Center;
-
                 if (textAlignment == TextAlignment.Stretched)
-                    DrawTextStretched(graphics, textStartX, textStartY);
-
+                {
+                    DrawTextStretched(canvas, paint, textStartX, textStartY);
+                }
                 else
                 {
+                    float x = textStartX;
                     switch (textAlignment)
                     {
                         case TextAlignment.Center:
-                            hrTextFormat.Alignment = StringAlignment.Center;
+                            x = textStartX + (textWidth - currentTextSize.Width) / 2f;
                             break;
-
                         case TextAlignment.Left:
-                            hrTextFormat.Alignment = StringAlignment.Near;
+                            x = textStartX;
                             break;
-
                         case TextAlignment.Right:
-                            hrTextFormat.Alignment = StringAlignment.Far;
+                            x = textStartX + (textWidth - currentTextSize.Width);
                             break;
                     }
-
-                    using (SolidBrush textBrush = new SolidBrush(mTextColor))
-                    {
-                        graphics.DrawString(humanReadableText, textFont, textBrush, textRectangle, hrTextFormat);
-                    }
+                    // Draw the text baseline at textStartY + -paint.FontMetrics.Ascent
+                    canvas.DrawText(humanReadableText, x, textStartY + -paint.FontMetrics.Ascent, paint);
                 }
-
             }
         }
 
-        private void DrawTextStretched(Graphics graphics, float textStartX, float textStartY)
+        // SkiaSharp version of DrawTextStretched
+        private void DrawTextStretched(SKCanvas canvas, SKPaint paint, float textStartX, float textStartY)
         {
             // Stretch the barcode text spaced equally across the width of the barcode.
-            using (SolidBrush textBrush = new SolidBrush(mTextColor))
+            int textLength = humanReadableText.Length;
+            if (textLength == 0) return;
+            float characterSegment = symbolWidth / textLength;
+            float x = textStartX;
+            for (int i = 0; i < textLength; i++)
             {
-                float characterWidth;
-                int textLength = humanReadableText.Length;
-                float centreAdjust;
-                float characterSegment = symbolWidth / textLength;
-
-                for (int i = 0; i < humanReadableText.Length; i++)
-                {
-                    string textCharacter = humanReadableText[i].ToString();
-                    characterWidth = graphics.MeasureString(textCharacter, mFont).Width;
-                    centreAdjust = (characterSegment - characterWidth) / 2;
-                    graphics.DrawString(textCharacter, textFont, textBrush, textStartX + centreAdjust, textStartY);
-                    textStartX += characterSegment;
-                }
-
+                string textCharacter = humanReadableText[i].ToString();
+                float characterWidth = paint.MeasureText(textCharacter);
+                float centreAdjust = (characterSegment - characterWidth) / 2f;
+                canvas.DrawText(textCharacter, x + centreAdjust, textStartY + -paint.FontMetrics.Ascent, paint);
+                x += characterSegment;
             }
         }
 
@@ -1414,16 +1346,16 @@ namespace ZintNet
         /// </summary>
         private void Initialize()
         {
-            mFont = new Font("Arial", 10.0f, FontStyle.Regular);
+            mFont = new SKFont(SKTypeface.Default, 10.0f);
             mBarcodeHeight = 20.0f;
             mMultiplier = 1.0f;
             mXDimension = 0.264583f;    // 1 pixel.
             mRotation = 0;
             mNumberOfCheckDigits = 2;
             mITF14BearerStyle = ITF14BearerStyle.Rectangle;
-            mBarcodeColor = Color.Black;
+            mBarcodeColor = SKColors.Black;
             mTextMargin = 0.0f;
-            mTextColor = Color.Black;
+            mTextColor = SKColors.Black;
             mTextAlignment = TextAlignment.Center;
             mTextPosition = TextPosition.UnderBarcode;
             mTextVisible = true;
@@ -1466,30 +1398,25 @@ namespace ZintNet
             linearShiftCount = 0;
             leftCharacterWidth = 0.0f;
             firstBarXOffset = 0.0f;
-            textFont = new Font("Arial", 10.0f, FontStyle.Regular);
+            textFont = new SKFont(SKTypeface.Default, 10.0f);
         }
 
         /// <summary>
         /// Calculates the final dimensions of the symbol including any displayed text.
         /// </summary>
-        /// <param name="graphics">graphics surface to render the barcode</param>
-        /// <returns>returns the symbol dimensions in pixels</returns>
-        public Size SymbolSize(Graphics graphics)
+        /// <param name="dpiX">Horizontal DPI for pixel-to-mm conversion</param>
+        /// <param name="dpiY">Vertical DPI for pixel-to-mm conversion</param>
+        /// <returns>returns the symbol dimensions in pixels as SKSizeI</returns>
+        public SKSizeI SymbolSize(float dpiX, float dpiY)
         {
-            Size symbolSize = new Size(0, 0);
-
+            var symbolSize = new SKSizeI(0, 0);
             if (isValidFlag)
             {
-                GraphicsState graphicState = graphics.Save();
-                graphics.PageUnit = GraphicsUnit.Millimeter;
-                graphics.PageScale = 1.0f;
-
-                GetTotalSymbolSize(graphics);
-                symbolSize.Width = (int)Math.Ceiling(DisplayMetrics.Convert.MillimetersToPixels(symbolWidth, graphics.DpiX));
-                symbolSize.Height = (int)Math.Ceiling(DisplayMetrics.Convert.MillimetersToPixels(symbolHeight, graphics.DpiY));
-                graphics.Restore(graphicState);
+                GetTotalSymbolSize();
+                int widthPx = (int)Math.Ceiling(DisplayMetrics.Convert.MillimetersToPixels(symbolWidth, dpiX));
+                int heightPx = (int)Math.Ceiling(DisplayMetrics.Convert.MillimetersToPixels(symbolHeight, dpiY));
+                symbolSize = new SKSizeI(widthPx, heightPx);
             }
-
             return symbolSize;
         }
 
@@ -1521,6 +1448,7 @@ namespace ZintNet
                     encoder = new IntelligentMailEncoder(symbolId, barcodeMessage);
                     encodedData = encoder.EncodeData();
                     barcodeText = encoder.BarcodeText;
+                    checkDigitText = encoder.CheckDigitText;
                     break;
 
                 case Symbology.PostNet:
@@ -1773,13 +1701,13 @@ namespace ZintNet
         /// Calculate the size of the barcode symbol including any bearers and binders.
         /// </summary>
         /// <returns>symbol dimensions</returns>
-        private SizeF GetSymbolOnlySize()
+        private SKSize GetSymbolOnlySize()
         {
             // Symbol dimensions without text.
             int rowWidth;
             int maxWidth = 0;
             float quietZone = 0.0f;
-            SizeF symbolSize = new SizeF(0.0f, 0.0f);
+            SKSize symbolSize = new SKSize(0.0f, 0.0f);
             float elementWidth = mXDimension * mMultiplier;
 
             firstBarXOffset = 0.0f;
@@ -1789,7 +1717,6 @@ namespace ZintNet
                 symbolSize.Width = 28.16f * mMultiplier;
                 symbolSize.Height = 26.86f * mMultiplier;
             }
-
             else
             {
                 IEnumerator<SymbolData> enumerator = encodedData.GetEnumerator();
@@ -1822,7 +1749,6 @@ namespace ZintNet
                     // Use the height if specified, else use the property value. 
                     if (symbolData.RowHeight == 0.0f)
                         symbolSize.Height += mBarcodeHeight;
-
                     else
                         symbolSize.Height += symbolData.RowHeight * elementWidth;
                 }
@@ -1865,21 +1791,20 @@ namespace ZintNet
         /// <summary>
         /// Gets the overall size of the symbol including any text.
         /// </summary>
-        /// <param name="graphics">render graphics</param>
-        private void GetTotalSymbolSize(Graphics graphics)
+        private void GetTotalSymbolSize()
         {
             leftCharacterWidth = 0.0f;
             humanReadableText = String.Empty;
             float elementWidth = mXDimension * mMultiplier;
 
-            SizeF symbolSize = GetSymbolOnlySize();
+            SKSize symbolSize = GetSymbolOnlySize();
             symbolWidth = symbolSize.Width;
             symbolHeight = symbolSize.Height;
             if ((!String.IsNullOrEmpty(barcodeText) && mTextVisible) || isEanUpc)
             {
                 if (isEanUpc)
                 {
-                    GetEanUpcTextSize(graphics);
+                    GetEanUpcTextSize();
                     symbolHeight += currentTextSize.Height;
                     if (leftCharacterWidth > 0)
                         firstBarXOffset = leftCharacterWidth - (linearShiftCount * elementWidth);
@@ -1889,11 +1814,10 @@ namespace ZintNet
 
                     symbolWidth += leftCharacterWidth;
                 }
-
                 else
                 {
-                    // Get the text size for a linear 1D sysbol.
-                    GetTextSize(graphics);
+                    // Get the text size for a linear 1D symbol.
+                    GetTextSize();
                     symbolHeight += mTextMargin + currentTextSize.Height;
                     // Text is wider than the symbol.
                     if (currentTextSize.Width > symbolWidth)
@@ -1908,8 +1832,7 @@ namespace ZintNet
         /// <summary>
         /// Optimize the font size to the linear symbol.
         /// </summary>
-        /// <param name="graphics">the graphics surface the barcode will be drawn on.</param>
-        void GetTextSize(Graphics graphics)
+        void GetTextSize()
         {
             textFont = mFont;
             float fontSize = mFont.Size;
@@ -1922,46 +1845,52 @@ namespace ZintNet
             if (symbolId == Symbology.Code39 || symbolId == Symbology.Code39Extended)
                 humanReadableText = "*" + humanReadableText + "*";
 
-            // Optimize the text size.
-            currentTextSize = graphics.MeasureString(humanReadableText, textFont);
-            if (currentTextSize.Width > symbolWidth)
+            // Optimize the text size using SkiaSharp
+            using (var paint = new SKPaint { Typeface = mFont.Typeface, TextSize = fontSize, IsAntialias = true })
             {
-                do
+                currentTextSize = new SKSize(paint.MeasureText(humanReadableText), paint.FontMetrics.Descent - paint.FontMetrics.Ascent);
+                if (currentTextSize.Width > symbolWidth)
                 {
-                    // Try to reduce the font size until the text width is less than the barcode width.
-                    fontSize -= 1.0f;
-                    textFont = new System.Drawing.Font(mFont.FontFamily, fontSize, mFont.Style);
-                    currentTextSize = graphics.MeasureString(humanReadableText, textFont);
-                    if (fontSize <= 4.0f)	// Don't let the font get too small.
-                        break;
-
-                } while (currentTextSize.Width >= symbolWidth);
+                    do
+                    {
+                        fontSize -= 1.0f;
+                        if (fontSize <= 4.0f)
+                            break;
+                        textFont = new SKFont(mFont.Typeface, fontSize);
+                        paint.TextSize = fontSize;
+                        currentTextSize = new SKSize(paint.MeasureText(humanReadableText), paint.FontMetrics.Descent - paint.FontMetrics.Ascent);
+                    } while (currentTextSize.Width >= symbolWidth);
+                }
             }
         }
 
         /// <summary>
-        /// Opimize the text font size that will fit between the guard bars.
+        /// Optimize the text font size that will fit between the guard bars.
         /// </summary>
-        /// <param name="graphics">the graphics surface the barcode will be drawn on</param>
-        private void GetEanUpcTextSize(Graphics graphics)
+        private void GetEanUpcTextSize()
         {
-            SizeF textSize = new SizeF(0, 0);
             float fontSize = 1 * mMultiplier;
             float maxTextWidth = 7 * mXDimension * mMultiplier * leftHandText.Length;
-            do
+            SKSize textSize;
+            using (var paint = new SKPaint { Typeface = mFont.Typeface, TextSize = fontSize, IsAntialias = true })
             {
-                fontSize += 0.5f;
-                textFont = new System.Drawing.Font(mFont.FontFamily, fontSize, mFont.Style);
-                textSize = graphics.MeasureString(leftHandText, textFont);
-            } while (textSize.Width < maxTextWidth);
+                do
+                {
+                    fontSize += 0.5f;
+                    textFont = new SKFont(mFont.Typeface, fontSize);
+                    paint.TextSize = fontSize;
+                    textSize = new SKSize(paint.MeasureText(leftHandText), paint.FontMetrics.Descent - paint.FontMetrics.Ascent);
+                } while (textSize.Width < maxTextWidth);
 
-            fontSize -= 1.0f;
-            textFont = new System.Drawing.Font(mFont.FontFamily, fontSize, mFont.Style);
-            textSize = graphics.MeasureString(leftHandText, textFont);
-            if (!string.IsNullOrEmpty(leftHandCharacter))
-                leftCharacterWidth = graphics.MeasureString(leftHandCharacter, textFont).Width;
+                fontSize -= 1.0f;
+                textFont = new SKFont(mFont.Typeface, fontSize);
+                paint.TextSize = fontSize;
+                textSize = new SKSize(paint.MeasureText(leftHandText), paint.FontMetrics.Descent - paint.FontMetrics.Ascent);
+                if (!string.IsNullOrEmpty(leftHandCharacter))
+                    leftCharacterWidth = paint.MeasureText(leftHandCharacter);
 
-            currentTextSize = textSize;
+                currentTextSize = textSize;
+            }
         }
     }
 }
